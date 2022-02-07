@@ -163,7 +163,12 @@ ArrayList<String> parse(String description) {
                                     sendEvent(name: "thermostatOperatingState", value: "heating")}
                                 else { sendEvent(name: "thermostatOperatingState", value: "idle")}
                             break
-                            case '1802': //Moes Temperature
+			    case '1802': //Moes Temperature (AltModelType 1)
+                                String temperature = HexUtils.hexStringToInt("${data[-2]}${data[-1]}") / 10
+                                logging("${device.displayName} Temp ${temperature}, data ${msgMap["data"]}")
+                                sendEvent(name: "temperature", value: temperature, unit: "C" )
+                            break
+                            case '6602': //AltModelType 2 Temperature
                                 String temperature = HexUtils.hexStringToInt("${data[-2]}${data[-1]}") / 10
                                 logging("${device.displayName} Temp ${temperature}, data ${msgMap["data"]}")
                                 sendEvent(name: "temperature", value: temperature, unit: "C" )
@@ -208,12 +213,26 @@ ArrayList<String> parse(String description) {
                                 sendEvent(name: "battery", value: batt, unit:"%", descriptionText: "reported from 1502")
                             break
                             case '6702':
-                                //String values = data.collect{c -> HexUtils.hexStringToInt(c)}
-                                String batt = (HexUtils.hexStringToInt(data[-1]).toFloat() /3) *10
-                                logging("${device.displayName} battery ${batt}")
-                                sendEvent(name: "battery", value: batt, unit:"%", descriptionText: "reported from 6702" )
-                                // 6702 - [68, 13, 103, 2, 0, 4, 0, 0, 0, 35] ?3.5 volt?
-                                // 6702 - [126, 162, 103, 2, 0, 4, 0, 0, 0, 30] ?3 volt?
+                                switch (AltModelType())
+                                {
+                                    case 2:
+                                        //not battery - heat set point
+                                        String SetPoint = HexUtils.hexStringToInt("${data[-2]}${data[-1]}") / 10
+                                        logging("${device.displayName} (6702) Temp Set Point ${SetPoint}, data ${msgMap["data"]}")
+                                        sendEvent(name: "heatingSetpoint", value: SetPoint.toFloat(), unit: "C")
+                                        sendEvent(name: "thermostatSetpoint", value: SetPoint.toFloat(), unit: "C")
+                                        if (device.currentValue("thermostatMode") != "off" && SetPoint.toFloat() > device.currentValue("temperature").toFloat()) { 
+                                        sendEvent(name: "thermostatOperatingState", value: "heating")}
+                                        else { sendEvent(name: "thermostatOperatingState", value: "idle")}
+                                    break
+                                    default:
+                                    //String values = data.collect{c -> HexUtils.hexStringToInt(c)}
+                                    String batt = (HexUtils.hexStringToInt(data[-1]).toFloat() /3) *10
+                                    logging("${device.displayName} battery ${batt}")
+                                    sendEvent(name: "battery", value: batt, unit:"%", descriptionText: "reported from 6702" )
+                                    // 6702 - [68, 13, 103, 2, 0, 4, 0, 0, 0, 35] ?3.5 volt?
+                                    // 6702 - [126, 162, 103, 2, 0, 4, 0, 0, 0, 30] ?3 volt?
+                                }
                             break
                             
                             case '0D05': // battery low warning
@@ -389,6 +408,22 @@ boolean isMoesModel(String manufacturer=null) {
     }
 }
 
+int AltModelType (String manufacturer=null) {
+    manufacturer = manufacturer != null ? manufacturer : getDeviceDataByName('manufacturer')
+    switch(manufacturer) {
+        case "_TZE200_zion52ef":
+            //Moes
+            return 1
+            break
+        case "_TZE200_c88teujp":
+            return 2
+            break
+        
+        default:
+            //generic
+            return 0
+    }
+}
 ////////////////////////////////////////////////////////////////////////////
 
 def refresh() {
